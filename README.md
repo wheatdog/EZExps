@@ -4,9 +4,9 @@ A Hackable (deep learning) experiments helper scripts
 
 ## Helper scripts
 
-- `ezexps/exps.py`
-- `ezexps/gsheet_uploader.py`
-- `ezexps/local_dependency.py`
+- `exps.py`: A experiment wrapper with only two assumptions
+- `gsheet_uploader.py`
+- `local_dependency.py`
 
 ## Example
 
