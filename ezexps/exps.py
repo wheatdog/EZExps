@@ -65,6 +65,10 @@ def main():
     db = client[DATABASE]
     collect = db['runs']
 
+    # A Hack to make SRCFILE work while exps.py is in the different folder
+    print(os.getcwd())
+    sys.path.append(os.getcwd())
+
     src_mod = SRCFILE[:-3] if SRCFILE.endswith('.py') else SRCFILE
     mod = importlib.import_module(src_mod)
 
