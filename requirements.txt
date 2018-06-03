@@ -1,0 +1,6 @@
+pymongo==3.6.1
+gspread==3.0.0
+modulegraph==0.16
+termcolor==1.1.0
+GitPython==2.1.10
+google_api_python_client==1.7.1
