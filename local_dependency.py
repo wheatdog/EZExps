@@ -50,7 +50,7 @@ def check(run_file, fluffy=False):
     deps = get_dependencies_file(run_file)
 
     path = os.path.dirname(os.path.realpath(run_file))
-    repo = Repo(path)
+    repo = Repo(path, search_parent_directories=True)
     changed_files = [item.a_path for item in repo.index.diff(None)]
     repo_root = repo.git.rev_parse("--show-toplevel")
     deps = [os.path.relpath(item, repo_root) for item in deps]

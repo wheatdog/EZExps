@@ -23,7 +23,7 @@ GSHEET_KEY='private/spreadsheet_key'
 
 def get_git_commit_hash(run_file):
     path = os.path.dirname(os.path.realpath(run_file))
-    repo = Repo(path)
+    repo = Repo(path, search_parent_directories=True)
     return repo.git.rev_parse('HEAD')
 
 def auth_gss_client(path, scopes):
@@ -122,7 +122,7 @@ def main():
 
     file_log = open(log_filename)
 
-    post['logs'] = str(file_log.read())
+    post['logs'] = file_log.read()
     os.unlink(log_filename)
 
     time_end = datetime.now()
