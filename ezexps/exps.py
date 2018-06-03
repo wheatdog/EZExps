@@ -24,7 +24,6 @@ GSHEET_KEY='private/spreadsheet_key'
 def get_git_commit_hash(run_file):
     path = os.path.dirname(os.path.realpath(run_file))
     repo = Repo(path)
-
     return repo.git.rev_parse('HEAD')
 
 def auth_gss_client(path, scopes):
@@ -96,13 +95,14 @@ def main():
     pid = os.fork()
     if pid == 0:
         # Child
+        os.close(pipe_write)
 
         file_read = os.fdopen(pipe_read)
 
         with open(log_filename, 'w') as file_log:
             for content in file_read:
                 print(content, end='')
-                print(content, end='', file=file_log, flush=True)
+                print(content, end='', file=file_log)
 
             file_log.flush()
             os.fsync(file_log.fileno())
@@ -114,10 +114,11 @@ def main():
         os.dup2(pipe_write, sys.stderr.fileno())
 
     post['artifacts'] = mod.main(args)
-    os.wait()
 
     os.dup2(old_stdout, sys.stdout.fileno())
     os.dup2(old_stderr, sys.stderr.fileno())
+    os.close(pipe_write)
+    os.waitpid(pid, 0)
 
     file_log = open(log_filename)
 
