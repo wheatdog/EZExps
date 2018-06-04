@@ -162,11 +162,10 @@ def main(args):
     post['time']['end'] = time_end.strftime("%Y-%m-%d %H:%M:%S")
     post['time']['elapsed'] = str(time_end - time_start)
 
-    summary_exps(post)
-
     result = collect.insert_one(post)
-
     post = collect.find_one({'_id': ObjectId(result.inserted_id)})
+
+    summary_exps(post)
     sheet_name = '{}.archive'.format(args.database)
     upload_to_gsheet(post, sheet_name)
 
