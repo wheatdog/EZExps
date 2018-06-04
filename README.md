@@ -1,4 +1,4 @@
-# Expsboost
+# EZExps
 
 A Hackable (deep learning) experiments helper scripts
 
@@ -11,11 +11,8 @@ A Hackable (deep learning) experiments helper scripts
 ## Example
 
 ```
-(t5) ytliou@ubuntu:~/4tb/expsboost$ pwd
-/home/ytliou/4tb/expsboost
-(t5) ytliou@ubuntu:~/4tb/expsboost$ python ezexps/
-exps.py              gsheet_uploader.py   local_dependency.py  __pycache__/
-(t5) ytliou@ubuntu:~/4tb/expsboost$ python ezexps/exps.py --epochs 1
+cd example
+python ../exps.py 'lr=0.1 test' main.py --lr 0.1 --epochs 1
 ```
 
 ## Todo
