@@ -1,7 +1,9 @@
 import os
 import sys
+import argparse
 import importlib
 import gspread
+import pprint
 
 import local_dependency 
 
@@ -13,13 +15,43 @@ from git import Repo
 from oauth2client.service_account import ServiceAccountCredentials
 from bson.objectid import ObjectId
 
-PURPOSE='test this experiments'
 DATABASE='crossdata-seg'
-SRCFILE='main.py'
 FLUFFY=False
 
 AUTH_JSON_PATH='private/auth.json'
 GSHEET_KEY='private/spreadsheet_key'
+
+def get_args():
+    parser = argparse.ArgumentParser(description='Experiment Wrapper')
+    parser.add_argument('--fluffy-check', action='store_true', default=FLUFFY,
+                        help='Enable fluffy dependency check')
+    parser.add_argument('--database', type=str, default=DATABASE,
+                        help='database')
+    parser.add_argument('purpose', type=str,
+                        help='purpoes of this experiment')
+    parser.add_argument('srcfile', type=str,
+                        help='source file in a form of *.py')
+
+    # This is a Hack for passing argument to SRCFILE
+    cnt = 0
+    for i in sys.argv[1:]:
+        cnt += 1
+        if i[-3:] == '.py':
+            break
+
+    old_argv = sys.argv
+    sys.argv = sys.argv[:cnt+1]
+    args = parser.parse_args() 
+    assert(args.srcfile[-3:] == '.py')
+
+    sys.argv = old_argv[cnt+1:]
+    sys.argv.insert(0, old_argv[0])
+    return args
+
+def summary_exps(post):
+    pp = pprint.PrettyPrinter(indent=2)
+    post = {k: v for k, v in post.items() if k != 'logs'}
+    pp.pprint(post)
 
 def get_git_commit_hash(run_file):
     path = os.path.dirname(os.path.realpath(run_file))
@@ -30,10 +62,9 @@ def auth_gss_client(path, scopes):
     credentials = ServiceAccountCredentials.from_json_keyfile_name(path, scopes)
     return gspread.authorize(credentials)
 
-def update_sheet(gss_client, key, exp_data):
+def update_sheet(gss_client, key, sheet_name, exp_data):
     wks = gss_client.open_by_key(key)
     exists_worksheets = [item.title for item in wks.worksheets()]
-    sheet_name = '{}.archive'.format(DATABASE)
     if sheet_name not in exists_worksheets:
         wks.add_worksheet(sheet_name, 0, 0)
     sheet = wks.worksheet(sheet_name)
@@ -50,39 +81,39 @@ def update_sheet(gss_client, key, exp_data):
 
     sheet.insert_row(upload_data, 2)
 
-def upload_to_gsheet(post):
+def upload_to_gsheet(post, sheet_name):
     gss_scopes = ['https://spreadsheets.google.com/feeds']
     gss_client = auth_gss_client(AUTH_JSON_PATH, gss_scopes)
 
     with open(GSHEET_KEY) as f:
         skey = f.read().strip()
-        update_sheet(gss_client, skey, post)
+        update_sheet(gss_client, skey, sheet_name, post)
 
-def main():
+def main(args):
 
     client = MongoClient()
-    db = client[DATABASE]
+    db = client[args.database]
     collect = db['runs']
 
     # A Hack to make SRCFILE work while exps.py is in the different folder
     print(os.getcwd())
     sys.path.append(os.getcwd())
 
-    src_mod = SRCFILE[:-3] if SRCFILE.endswith('.py') else SRCFILE
+    src_mod = args.srcfile[:-3]
     mod = importlib.import_module(src_mod)
 
     post = {}
 
     time_start = datetime.now()
 
-    args = mod.get_args()
+    exps_args = mod.get_args()
 
-    post['args'] = vars(args)
+    post['args'] = vars(exps_args)
 
     post['src'] = {}
-    post['src']['files'] = local_dependency.check(SRCFILE, fluffy=FLUFFY)
-    post['src']['git_commit'] = get_git_commit_hash(SRCFILE)
-    post['purpose'] = PURPOSE
+    post['src']['files'] = local_dependency.check(args.srcfile, fluffy=args.fluffy_check)
+    post['src']['git_commit'] = get_git_commit_hash(args.srcfile)
+    post['purpose'] = args.purpose
 
     old_stdout = os.dup(sys.stdout.fileno())
     old_stderr = os.dup(sys.stderr.fileno())
@@ -113,7 +144,7 @@ def main():
         os.dup2(pipe_write, sys.stdout.fileno())
         os.dup2(pipe_write, sys.stderr.fileno())
 
-    post['artifacts'] = mod.main(args)
+    post['artifacts'] = mod.main(exps_args)
 
     os.dup2(old_stdout, sys.stdout.fileno())
     os.dup2(old_stderr, sys.stderr.fileno())
@@ -131,10 +162,13 @@ def main():
     post['time']['end'] = time_end.strftime("%Y-%m-%d %H:%M:%S")
     post['time']['elapsed'] = str(time_end - time_start)
 
+    summary_exps(post)
+
     result = collect.insert_one(post)
 
     post = collect.find_one({'_id': ObjectId(result.inserted_id)})
-    upload_to_gsheet(post)
+    sheet_name = '{}.archive'.format(args.database)
+    upload_to_gsheet(post, sheet_name)
 
 if __name__ == '__main__':
-    main()
+    main(get_args())
