@@ -12,10 +12,12 @@ from pymongo import MongoClient
 from tempfile import mkstemp
 from bson.objectid import ObjectId
 from git import Repo
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2 import service_account
+from google.auth.transport.requests import AuthorizedSession
 from bson.objectid import ObjectId
+from termcolor import colored
 
-DATABASE='crossdata-seg'
+DATABASE='demo'
 FLUFFY=False
 
 AUTH_JSON_PATH='private/auth.json'
@@ -59,8 +61,12 @@ def get_git_commit_hash(run_file):
     return repo.git.rev_parse('HEAD')
 
 def auth_gss_client(path, scopes):
-    credentials = ServiceAccountCredentials.from_json_keyfile_name(path, scopes)
-    return gspread.authorize(credentials)
+    credentials = service_account.Credentials.from_service_account_file(
+                path)
+    scoped_credentials = credentials.with_scopes(scopes)
+    gss_client = gspread.Client(auth=scoped_credentials)
+    gss_client.session = AuthorizedSession(scoped_credentials)
+    return gss_client
 
 def update_sheet(gss_client, key, sheet_name, exp_data):
     wks = gss_client.open_by_key(key)
@@ -144,7 +150,14 @@ def main(args):
         os.dup2(pipe_write, sys.stdout.fileno())
         os.dup2(pipe_write, sys.stderr.fileno())
 
-    post['artifacts'] = mod.main(exps_args)
+    try:
+        post['artifacts'] = mod.main(exps_args)
+    except KeyboardInterrupt:
+        os.dup2(old_stdout, sys.stdout.fileno())
+        os.dup2(old_stderr, sys.stderr.fileno())
+        print(colored('The reason to stop this experiment:', 'red'), end=' ')
+        post['purpose'] = '(Got interrupted: {}) {}'.format(input(), post['purpose'])
+
 
     os.dup2(old_stdout, sys.stdout.fileno())
     os.dup2(old_stderr, sys.stderr.fileno())
