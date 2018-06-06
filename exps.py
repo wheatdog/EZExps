@@ -4,6 +4,7 @@ import argparse
 import importlib
 import gspread
 import pprint
+import configparser
 
 import local_dependency 
 
@@ -17,17 +18,27 @@ from google.auth.transport.requests import AuthorizedSession
 from bson.objectid import ObjectId
 from termcolor import colored
 
+from pytee import Pytee
+
 DATABASE='demo'
-FLUFFY=False
 
 AUTH_JSON_PATH='private/auth.json'
 GSHEET_KEY='private/spreadsheet_key'
 
+def get_args_from_file():
+    config = configparser.ConfigParser()
+    config.read('ezexps.ini')
+    return config['default']
+
 def get_args():
+
+    config = get_args_from_file()
+
     parser = argparse.ArgumentParser(description='Experiment Wrapper')
-    parser.add_argument('--fluffy-check', action='store_true', default=FLUFFY,
+    parser.add_argument('--fluffy-check', action='store_true',
                         help='Enable fluffy dependency check')
-    parser.add_argument('--database', type=str, default=DATABASE,
+    parser.add_argument('--database', type=str,
+                        default=config['database'] if 'database' in config else DATABASE,
                         help='database')
     parser.add_argument('purpose', type=str,
                         help='purpoes of this experiment')
@@ -51,6 +62,7 @@ def get_args():
     return args
 
 def summary_exps(post):
+    print(colored('==== Experiment Summary ====', 'green'))
     pp = pprint.PrettyPrinter(indent=2)
     post = {k: v for k, v in post.items() if k != 'logs'}
     pp.pprint(post)
@@ -121,48 +133,20 @@ def main(args):
     post['src']['git_commit'] = get_git_commit_hash(args.srcfile)
     post['purpose'] = args.purpose
 
-    old_stdout = os.dup(sys.stdout.fileno())
-    old_stderr = os.dup(sys.stderr.fileno())
 
     log_fd, log_filename = mkstemp()
     os.close(log_fd)
+    tee = Pytee(log_filename)
     print(log_filename)
 
-    pipe_read, pipe_write = os.pipe()
-    pid = os.fork()
-    if pid == 0:
-        # Child
-        os.close(pipe_write)
-
-        file_read = os.fdopen(pipe_read)
-
-        with open(log_filename, 'w') as file_log:
-            for content in file_read:
-                print(content, end='')
-                print(content, end='', file=file_log)
-
-            file_log.flush()
-            os.fsync(file_log.fileno())
-
-        os._exit(255)
-    else:
-        # Parent
-        os.dup2(pipe_write, sys.stdout.fileno())
-        os.dup2(pipe_write, sys.stderr.fileno())
-
+    tee.start()
     try:
         post['artifacts'] = mod.main(exps_args)
+        tee.end()
     except KeyboardInterrupt:
-        os.dup2(old_stdout, sys.stdout.fileno())
-        os.dup2(old_stderr, sys.stderr.fileno())
+        tee.end()
         print(colored('The reason to stop this experiment:', 'red'), end=' ')
         post['purpose'] = '(Got interrupted: {}) {}'.format(input(), post['purpose'])
-
-
-    os.dup2(old_stdout, sys.stdout.fileno())
-    os.dup2(old_stderr, sys.stderr.fileno())
-    os.close(pipe_write)
-    os.waitpid(pid, 0)
 
     file_log = open(log_filename)
 
