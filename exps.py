@@ -28,7 +28,8 @@ GSHEET_KEY='private/spreadsheet_key'
 def get_args_from_file():
     config = configparser.ConfigParser()
     config.read('ezexps.ini')
-    return config['default']
+    assert('default' in config)
+    return config
 
 def get_args():
 
@@ -37,8 +38,11 @@ def get_args():
     parser = argparse.ArgumentParser(description='Experiment Wrapper')
     parser.add_argument('--fluffy-check', action='store_true',
                         help='Enable fluffy dependency check')
+    parser.add_argument('--upload-to-gsheet', action='store_true',
+                        default=config['default'].getboolean('upload_to_gsheet') if 'upload_to_gsheet' in config['default'] else False,
+                        help='Upload result to Google Sheet')
     parser.add_argument('--database', type=str,
-                        default=config['database'] if 'database' in config else DATABASE,
+                        default=config['default']['database'] if 'database' in config['default'] else DATABASE,
                         help='database')
     parser.add_argument('purpose', type=str,
                         help='purpoes of this experiment')
@@ -56,6 +60,9 @@ def get_args():
     sys.argv = sys.argv[:cnt+1]
     args = parser.parse_args() 
     assert(args.srcfile[-3:] == '.py')
+
+    if args.upload_to_gsheet:
+        assert(os.path.isfile(AUTH_JSON_PATH) and os.path.isfile(GSHEET_KEY))
 
     sys.argv = old_argv[cnt+1:]
     sys.argv.insert(0, old_argv[0])
@@ -164,7 +171,9 @@ def main(args):
 
     summary_exps(post)
     sheet_name = '{}.archive'.format(args.database)
-    upload_to_gsheet(post, sheet_name)
+
+    if args.upload_to_gsheet:
+        upload_to_gsheet(post, sheet_name)
 
 if __name__ == '__main__':
     main(get_args())
