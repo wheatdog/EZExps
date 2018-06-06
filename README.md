@@ -8,6 +8,15 @@ A set of hackable (deep learning) experiments helpers for python scripts
 - Store experiment information into MongoDB after finishing.
 - Upload experiment information to Google Sheets if you have OAuth2 credentials for Google API.
 
+## Tracked experiment information
+
+- Arguments
+- Artifacts
+- Purpose
+- Source files
+- Start/End/Elapsed Time
+- Stdout
+
 ## Prerequisites
 
 You will need
