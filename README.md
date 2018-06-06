@@ -1,6 +1,6 @@
 # EZExps
 
-A set of hackable (deep learning) experiments helpers for python scripts
+A set of hackable helpers for python-only (deep learning) experiment scripts
 
 ## Features
 
