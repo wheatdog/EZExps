@@ -29,8 +29,9 @@ You will need
 There are some assumptions for the `.py` we can track.
 
 - Must have a function named `get_args`, which returns an object like `ArgumentParser.parse_args()` returns.
-- Must have a function named `main`, which return the experiment artifacts.
+- Must have a function named `main`, which take the output of `get_args` as the only argument and return the experiment artifacts.
 
+You can check out [example](example) for more detail.
 
 ## Installation
 
