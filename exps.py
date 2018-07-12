@@ -1,5 +1,6 @@
 import os
 import sys
+import signal
 import argparse
 import importlib
 import gspread
@@ -146,34 +147,41 @@ def main(args):
     tee = Pytee(log_filename)
     print(log_filename)
 
-    tee.start()
-    try:
-        post['artifacts'] = mod.main(exps_args)
-        tee.end()
-    except KeyboardInterrupt:
+    def postprocessing(post):
+        file_log = open(log_filename)
+
+        post['logs'] = file_log.read()
+        os.unlink(log_filename)
+
+        time_end = datetime.now()
+        post['time'] = {}
+        post['time']['start'] = time_start.strftime("%Y-%m-%d %H:%M:%S")
+        post['time']['end'] = time_end.strftime("%Y-%m-%d %H:%M:%S")
+        post['time']['elapsed'] = str(time_end - time_start)
+
+        result = collect.insert_one(post)
+        post = collect.find_one({'_id': ObjectId(result.inserted_id)})
+
+        summary_exps(post)
+        sheet_name = '{}.archive'.format(args.database)
+
+        if args.upload_to_gsheet:
+            upload_to_gsheet(post, sheet_name)
+
+    def sigint_handler(signal, frame):
         tee.end()
         print(colored('The reason to stop this experiment:', 'red'), end=' ')
         post['purpose'] = '(Got interrupted: {}) {}'.format(input(), post['purpose'])
+        postprocessing(post)
+        exit()
 
-    file_log = open(log_filename)
+    signal.signal(signal.SIGINT, sigint_handler)
 
-    post['logs'] = file_log.read()
-    os.unlink(log_filename)
+    tee.start()
+    post['artifacts'] = mod.main(exps_args)
+    tee.end()
 
-    time_end = datetime.now()
-    post['time'] = {}
-    post['time']['start'] = time_start.strftime("%Y-%m-%d %H:%M:%S")
-    post['time']['end'] = time_end.strftime("%Y-%m-%d %H:%M:%S")
-    post['time']['elapsed'] = str(time_end - time_start)
-
-    result = collect.insert_one(post)
-    post = collect.find_one({'_id': ObjectId(result.inserted_id)})
-
-    summary_exps(post)
-    sheet_name = '{}.archive'.format(args.database)
-
-    if args.upload_to_gsheet:
-        upload_to_gsheet(post, sheet_name)
+    postprocessing(post)
 
 if __name__ == '__main__':
     main(get_args())
