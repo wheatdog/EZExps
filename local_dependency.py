@@ -69,10 +69,10 @@ def check(run_file, fluffy=False):
 
     if exit_code == -1:
         if not fluffy:
-            print("\nPlease commit modified or untracked files!")
+            print(colored('\nPlease commit modified or untracked files!', 'red'))
             exit(exit_code)
         else:
-            print("\nYou have modified or untracked files. Use at your own risk!")
+            print(colored('\nYou have modified or untracked files. Use at your own risk!', 'red'))
 
     return deps
 

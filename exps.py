@@ -3,52 +3,21 @@ import sys
 import signal
 import argparse
 import importlib
-import gspread
 import pprint
-import configparser
+import yaml
 
 import local_dependency 
+import keeper
 
+from collections import OrderedDict
 from datetime import datetime
-from pymongo import MongoClient
 from tempfile import mkstemp
-from bson.objectid import ObjectId
 from git import Repo
-from google.oauth2 import service_account
-from google.auth.transport.requests import AuthorizedSession
-from bson.objectid import ObjectId
 from termcolor import colored
 
 from pytee import Pytee
 
-DATABASE='demo'
-
-AUTH_JSON_PATH='private/auth.json'
-GSHEET_KEY='private/spreadsheet_key'
-
-def get_args_from_file():
-    config = configparser.ConfigParser()
-    config.read('ezexps.ini')
-    assert('default' in config)
-    return config
-
 def get_args():
-
-    config = get_args_from_file()
-
-    parser = argparse.ArgumentParser(description='Experiment Wrapper')
-    parser.add_argument('--fluffy-check', action='store_true',
-                        help='Enable fluffy dependency check')
-    parser.add_argument('--upload-to-gsheet', action='store_true',
-                        default=config['default'].getboolean('upload_to_gsheet') if 'upload_to_gsheet' in config['default'] else False,
-                        help='Upload result to Google Sheet')
-    parser.add_argument('--database', type=str,
-                        default=config['default']['database'] if 'database' in config['default'] else DATABASE,
-                        help='database')
-    parser.add_argument('purpose', type=str,
-                        help='purpoes of this experiment')
-    parser.add_argument('srcfile', type=str,
-                        help='source file in a form of *.py')
 
     # This is a Hack for passing argument to SRCFILE
     cnt = 0
@@ -57,20 +26,41 @@ def get_args():
         if i[-3:] == '.py':
             break
 
-    old_argv = sys.argv
-    sys.argv = sys.argv[:cnt+1]
-    args = parser.parse_args() 
+    valid_region_argv = sys.argv[:cnt+1]
+    sys.argv = [sys.argv[0]] + sys.argv[cnt+1:]
+
+    parser = argparse.ArgumentParser(description='Experiment Wrapper')
+    parser.add_argument('--config-file', type=str, default='ezexps.yml',
+                        help='Specify config file')
+
+    args, remaining_argv = parser.parse_known_args(valid_region_argv)
+
+    defaults = {
+            'database': 'demo'
+            }
+
+    if args.config_file:
+        assert(os.path.isfile(args.config_file))
+        with open(args.config_file) as f:
+            config = yaml.load(f.read())
+        assert('default' in config)
+        defaults = config['default']
+
+    parser.set_defaults(**defaults)
+    parser.add_argument('--fluffy-check', action='store_true',
+                        help='Enable fluffy dependency check')
+    parser.add_argument('purpose', type=str,
+                        help='purpoes of this experiment')
+    parser.add_argument('srcfile', type=str,
+                        help='source file in a form of *.py')
+
+    args = parser.parse_args(remaining_argv[1:]) 
     assert(args.srcfile[-3:] == '.py')
 
-    if args.upload_to_gsheet:
-        assert(os.path.isfile(AUTH_JSON_PATH) and os.path.isfile(GSHEET_KEY))
-
-    sys.argv = old_argv[cnt+1:]
-    sys.argv.insert(0, old_argv[0])
     return args
 
 def summary_exps(post):
-    print(colored('==== Experiment Summary ====', 'green'))
+    print(colored('\n# Experiment Summary', 'green'))
     pp = pprint.PrettyPrinter(indent=2)
     post = {k: v for k, v in post.items() if k != 'logs'}
     pp.pprint(post)
@@ -80,49 +70,10 @@ def get_git_commit_hash(run_file):
     repo = Repo(path, search_parent_directories=True)
     return repo.git.rev_parse('HEAD')
 
-def auth_gss_client(path, scopes):
-    credentials = service_account.Credentials.from_service_account_file(
-                path)
-    scoped_credentials = credentials.with_scopes(scopes)
-    gss_client = gspread.Client(auth=scoped_credentials)
-    gss_client.session = AuthorizedSession(scoped_credentials)
-    return gss_client
-
-def update_sheet(gss_client, key, sheet_name, exp_data):
-    wks = gss_client.open_by_key(key)
-    exists_worksheets = [item.title for item in wks.worksheets()]
-    if sheet_name not in exists_worksheets:
-        wks.add_worksheet(sheet_name, 0, 0)
-    sheet = wks.worksheet(sheet_name)
-
-    upload_data = [
-            str(exp_data['_id']),
-            exp_data['time']['start'],
-            exp_data['time']['end'],
-            exp_data['time']['elapsed'],
-            exp_data['purpose'],
-            str(exp_data['args']),
-            str(exp_data['src'])
-            ]
-
-    sheet.insert_row(upload_data, 2)
-
-def upload_to_gsheet(post, sheet_name):
-    gss_scopes = ['https://spreadsheets.google.com/feeds']
-    gss_client = auth_gss_client(AUTH_JSON_PATH, gss_scopes)
-
-    with open(GSHEET_KEY) as f:
-        skey = f.read().strip()
-        update_sheet(gss_client, skey, sheet_name, post)
-
 def main(args):
 
-    client = MongoClient()
-    db = client[args.database]
-    collect = db['runs']
-
     # A Hack to make SRCFILE work while exps.py is in the different folder
-    print(os.getcwd())
+    print(colored('Add {} to PATH'.format(os.getcwd()), 'blue'))
     sys.path.append(os.getcwd())
 
     src_mod = args.srcfile[:-3]
@@ -136,16 +87,18 @@ def main(args):
 
     post['args'] = vars(exps_args)
 
+    print(colored('\n# Source Files Checking', 'green'))
+
     post['src'] = {}
     post['src']['files'] = local_dependency.check(args.srcfile, fluffy=args.fluffy_check)
     post['src']['git_commit'] = get_git_commit_hash(args.srcfile)
     post['purpose'] = args.purpose
 
-
     log_fd, log_filename = mkstemp()
     os.close(log_fd)
     tee = Pytee(log_filename)
-    print(log_filename)
+    print(colored('Temporary log stdout to {}'.format(log_filename), 'blue'))
+
 
     def postprocessing(post):
         file_log = open(log_filename)
@@ -159,15 +112,18 @@ def main(args):
         post['time']['end'] = time_end.strftime("%Y-%m-%d %H:%M:%S")
         post['time']['elapsed'] = str(time_end - time_start)
 
-        result = collect.insert_one(post)
-        post = collect.find_one({'_id': ObjectId(result.inserted_id)})
+        print(colored('\n# Information Logging', 'green'))
+        for kpr_name, param in args.keeper.items():
+            print('Push result to {}...'.format(kpr_name), end='')
+            full_param = {} if param == None else param
+            full_param['database'] = args.database
+            kpr = getattr(keeper, kpr_name)(**full_param)
+            kpr.push(post)
+            print(colored('done', 'green'))
 
         summary_exps(post)
-        sheet_name = '{}.archive'.format(args.database)
 
-        if args.upload_to_gsheet:
-            upload_to_gsheet(post, sheet_name)
-
+            
     def sigint_handler(signal, frame):
         tee.end()
         print(colored('The reason to stop this experiment:', 'red'), end=' ')
@@ -178,6 +134,7 @@ def main(args):
     signal.signal(signal.SIGINT, sigint_handler)
 
     tee.start()
+    print(colored('\n# Experiment Begin', 'green'))
     post['artifacts'] = mod.main(exps_args)
     tee.end()
 

@@ -1,0 +1,7 @@
+default:
+    database: demo
+    keeper:
+        MongoKeeper: # Make sure always prior than GSheetKeeper if you want to track _id in GSheetKeeper
+        GSheetKeeper:
+            auth_json_path: private/auth.json
+            gsheet_key_path: private/spreadsheet_key
