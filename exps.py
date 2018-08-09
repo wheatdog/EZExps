@@ -5,6 +5,7 @@ import argparse
 import importlib
 import pprint
 import yaml
+import subprocess
 
 import local_dependency 
 import keeper
@@ -49,6 +50,8 @@ def get_args():
     parser.set_defaults(**defaults)
     parser.add_argument('--fluffy-check', action='store_true',
                         help='Enable fluffy dependency check')
+    parser.add_argument('--relax-mode', action='store_true',
+                        help='Enable relax mode so that you don\'t have to contain get_args and main in srcfile')
     parser.add_argument('purpose', type=str,
                         help='purpoes of this experiment')
     parser.add_argument('srcfile', type=str,
@@ -83,9 +86,11 @@ def main(args):
 
     time_start = datetime.now()
 
-    exps_args = mod.get_args()
-
-    post['args'] = vars(exps_args)
+    if not args.relax_mode:
+        exps_args = mod.get_args()
+        post['args'] = vars(exps_args)
+    else:
+        post['args'] = sys.argv[1:]
 
     print(colored('\n# Source Files Checking', 'green'))
 
@@ -114,7 +119,7 @@ def main(args):
 
         print(colored('\n# Information Logging', 'green'))
         for kpr_name, param in args.keeper.items():
-            print('Push result to {}...'.format(kpr_name), end='')
+            print('Push to {}...'.format(kpr_name), end='')
             full_param = {} if param == None else param
             full_param['database'] = args.database
             kpr = getattr(keeper, kpr_name)(**full_param)
@@ -133,9 +138,15 @@ def main(args):
 
     signal.signal(signal.SIGINT, sigint_handler)
 
-    tee.start()
     print(colored('\n# Experiment Begin', 'green'))
-    post['artifacts'] = mod.main(exps_args)
+    tee.start()
+    if not args.relax_mode:
+        post['artifacts'] = mod.main(exps_args)
+    else:
+        post['artifacts'] = "In relax mode, artifacts are untrackable for now"
+        exec_argv = ['python', args.srcfile] + sys.argv[1:]
+        subprocess.Popen(exec_argv)
+
     tee.end()
 
     postprocessing(post)
